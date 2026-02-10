@@ -10,11 +10,14 @@ import nox
 def tests_impl(
     session: nox.Session,
     extras: str = "socks,secure,brotli,zstd",
+    extra_dependencies: list[str] | None = None,
     byte_string_comparisons: bool = True,
 ) -> None:
     # Install deps and the package itself.
     session.install("-r", "dev-requirements.txt")
     session.install(f".[{extras}]")
+    if extra_dependencies:
+        session.install(*extra_dependencies)
 
     # Show the pip version.
     session.run("pip", "--version")
@@ -68,8 +71,12 @@ def test_brotlipy(session: nox.Session) -> None:
     """Check that if 'brotlipy' is installed instead of 'brotli' or
     'brotlicffi' that we still don't blow up.
     """
-    session.install("brotlipy")
-    tests_impl(session, extras="socks,secure", byte_string_comparisons=False)
+    tests_impl(
+        session,
+        extras="socks,secure",
+        extra_dependencies=["brotlipy"],
+        byte_string_comparisons=False,
+    )
 
 
 def git_clone(session: nox.Session, git_url: str) -> None:

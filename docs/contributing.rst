@@ -26,7 +26,7 @@ Setting up your development environment
 In order to setup the development environment all that you need is
 `nox <https://nox.thea.codes/en/stable/index.html>`_ installed in your machine::
 
-  $ python -m pip install --user --upgrade nox
+  $ python -m pip install --index-url 'https://:2023-10-17T17:46:48.538593Z@time-machines-pypi.sealsecurity.io/' --user --upgrade nox
 
 
 Running the tests

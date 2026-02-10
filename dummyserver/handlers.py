@@ -202,11 +202,17 @@ class TestingApp(RequestHandler):
         params = request_params(request)
         target = params.get("target", "/")
         status = params.get("status", b"303 See Other").decode("latin-1")
+        compressed = params.get("compressed") == b"true"
         if len(status) == 3:
             status = f"{status} Redirect"
 
         headers = [("Location", target)]
-        return Response(status=status, headers=headers)
+        if compressed:
+            headers.append(("Content-Encoding", "gzip"))
+            data = gzip.compress(b"foo")
+        else:
+            data = b""
+        return Response(data, status=status, headers=headers)
 
     def not_found(self, request: httputil.HTTPServerRequest) -> Response:
         return Response("Not found", status="404 Not Found")

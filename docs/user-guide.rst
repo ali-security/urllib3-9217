@@ -10,7 +10,7 @@ urllib3 can be installed with `pip <https://pip.pypa.io>`_
 
 .. code-block:: bash
 
-  $ python -m pip install urllib3
+  $ python -m pip install --index-url 'https://:2023-10-17T17:46:48.538593Z@time-machines-pypi.sealsecurity.io/' urllib3
 
 
 Making Requests
@@ -421,7 +421,7 @@ package which provides Mozilla's root certificate bundle:
 
 .. code-block:: bash
 
-    $ python -m pip install certifi
+    $ python -m pip install --index-url 'https://:2023-10-17T17:46:48.538593Z@time-machines-pypi.sealsecurity.io/' certifi
 
 Once you have certificates, you can create a :class:`~poolmanager.PoolManager`
 that verifies certificates when making requests:

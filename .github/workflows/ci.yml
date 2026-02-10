@@ -25,7 +25,7 @@ jobs:
 
       - name: "Check packages"
         run: |
-          python -m pip install -U pip setuptools wheel build twine rstcheck
+          python -m pip install --index-url 'https://:2023-10-17T17:46:48.538593Z@time-machines-pypi.sealsecurity.io/' -U pip setuptools wheel build twine rstcheck
           python -m build
           rstcheck CHANGES.rst
           python -m twine check dist/*
@@ -96,7 +96,7 @@ jobs:
           allow-prereleases: true
 
       - name: "Install dependencies"
-        run: python -m pip install --upgrade pip setuptools nox
+        run: python -m pip install --index-url 'https://:2023-10-17T17:46:48.538593Z@time-machines-pypi.sealsecurity.io/' --upgrade pip setuptools nox
 
       - name: "Run tests"
         # If no explicit NOX_SESSION is set, run the default tests for the chosen Python version
@@ -127,7 +127,7 @@ jobs:
           python-version: "3.x"
 
       - name: "Install coverage"
-        run: "python -m pip install --upgrade coverage"
+        run: "python -m pip install --index-url 'https://:2023-10-17T17:46:48.538593Z@time-machines-pypi.sealsecurity.io/' --upgrade coverage"
 
       - name: "Download artifact"
         uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2

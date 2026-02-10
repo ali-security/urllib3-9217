@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import gzip
 import http.client as httplib
 import socket
 import ssl
@@ -35,6 +36,32 @@ from urllib3.response import (  # type: ignore[attr-defined]
 )
 from urllib3.util.response import is_fp_closed
 from urllib3.util.retry import RequestHistory, Retry
+
+
+def zstd_compress(data: bytes) -> bytes:
+    import zstandard as zstd
+
+    return zstd.compress(data)  # type: ignore[no-any-return]
+
+
+def deflate2_compress(data: bytes) -> bytes:
+    compressor = zlib.compressobj(6, zlib.DEFLATED, -zlib.MAX_WBITS)
+    return compressor.compress(data) + compressor.flush()
+
+
+if brotli:
+    try:
+        brotli.Decompressor().process(b"", output_buffer_limit=1024)
+        _brotli_gte_1_2_0_available = True
+    except (AttributeError, TypeError):
+        _brotli_gte_1_2_0_available = False
+else:
+    _brotli_gte_1_2_0_available = False
+try:
+    zstd_compress(b"")
+    _zstd_available = True
+except ModuleNotFoundError:
+    _zstd_available = False
 
 
 class TestBytesQueueBuffer:
@@ -86,6 +113,23 @@ class TestBytesQueueBuffer:
             buffer.put(bytes(2**20))
 
         assert len(buffer.get(10 * 2**20)) == 10 * 2**20
+
+    @pytest.mark.parametrize(
+        "get_func",
+        (lambda b: b.get(len(b)), lambda b: b.get_all()),
+        ids=("get", "get_all"),
+    )
+    @pytest.mark.skipif(
+        sys.version_info < (3, 8), reason="pytest-memray requires Python 3.8+"
+    )
+    @pytest.mark.limit_memory("10.01 MB")
+    def test_memory_usage_single_chunk(
+        self, get_func: typing.Callable[[BytesQueueBuffer], bytes]
+    ) -> None:
+        buffer = BytesQueueBuffer()
+        chunk = bytes(10 * 2**20)  # 10 MiB
+        buffer.put(chunk)
+        assert get_func(buffer) is chunk
 
 
 # A known random (i.e, not-too-compressible) payload generated with:
@@ -326,7 +370,7 @@ class TestResponse:
 
     @onlyZstd()
     def test_decode_zstd(self) -> None:
-        data = zstd.compress(b"foo")
+        data = zstd_compress(b"foo")
 
         fp = BytesIO(data)
         r = HTTPResponse(fp, headers={"content-encoding": "zstd"})
@@ -336,7 +380,7 @@ class TestResponse:
     def test_decode_multiframe_zstd(self) -> None:
         data = (
             # Zstandard frame
-            zstd.compress(b"foo")
+            zstd_compress(b"foo")
             # skippable frame (must be ignored)
             + bytes.fromhex(
                 "50 2A 4D 18"  # Magic_Number (little-endian)
@@ -344,7 +388,7 @@ class TestResponse:
                 "00 00 00 00 00 00 00"  # User_Data
             )
             # Zstandard frame
-            + zstd.compress(b"bar")
+            + zstd_compress(b"bar")
         )
 
         fp = BytesIO(data)
@@ -353,7 +397,7 @@ class TestResponse:
 
     @onlyZstd()
     def test_chunked_decoding_zstd(self) -> None:
-        data = zstd.compress(b"foobarbaz")
+        data = zstd_compress(b"foobarbaz")
 
         fp = BytesIO(data)
         r = HTTPResponse(
@@ -379,11 +423,61 @@ class TestResponse:
     @onlyZstd()
     @pytest.mark.parametrize("data", [b"foo", b"x" * 100])
     def test_decode_zstd_incomplete(self, data: bytes) -> None:
-        data = zstd.compress(data)
+        data = zstd_compress(data)
         fp = BytesIO(data[:-1])
 
         with pytest.raises(DecodeError):
             HTTPResponse(fp, headers={"content-encoding": "zstd"})
+
+    _test_compressor_params: list[
+        tuple[str, tuple[str, typing.Callable[[bytes], bytes]] | None]
+    ] = [
+        ("deflate1", ("deflate", zlib.compress)),
+        ("deflate2", ("deflate", deflate2_compress)),
+        ("gzip", ("gzip", gzip.compress)),
+    ]
+    if _brotli_gte_1_2_0_available:
+        _test_compressor_params.append(("brotli", ("br", brotli.compress)))
+    else:
+        _test_compressor_params.append(("brotli", None))
+
+    @pytest.mark.parametrize(
+        "data",
+        [d[1] for d in _test_compressor_params],
+        ids=[d[0] for d in _test_compressor_params],
+    )
+    @pytest.mark.skipif(
+        sys.version_info < (3, 8), reason="pytest-memray requires Python 3.8+"
+    )
+    # Decoders consume different amounts of memory during decompression.
+    # We set the 10 MB limit to ensure that the whole decompressed data
+    # is not stored unnecessarily.
+    @pytest.mark.limit_memory("10 MB")
+    def test_memory_usage_decode_with_max_length(
+        self,
+        request: pytest.FixtureRequest,
+        data: tuple[str, typing.Callable[[bytes], bytes]] | None,
+    ) -> None:
+        if data is None:
+            pytest.skip(f"Proper {request.node.callspec.id} decoder is not available")
+
+        # Prepare 50 MB of compressed data
+        name, compress_func = data
+        compressed_data = compress_func(b"A" * (50 * 2**20))
+        limit = 1024 * 1024  # 1 MiB
+
+        fp = BytesIO(compressed_data)
+        r = HTTPResponse(
+            fp, headers={"content-encoding": name}, preload_content=False
+        )
+        r.read(amt=limit, decode_content=True)
+
+        # Check that the internal decoded buffer is empty unless brotli
+        # is used.
+        # Google's brotli library does not fully respect the output
+        # buffer limit: https://github.com/google/brotli/issues/1396
+        if name != "br" or (brotli and brotli.__name__ == "brotlicffi"):
+            assert len(r._decoded_buffer) == 0
 
     def test_multi_decoding_deflate_deflate(self) -> None:
         data = zlib.compress(zlib.compress(b"foo"))
@@ -433,6 +527,18 @@ class TestResponse:
         assert r.read(9 * 3) == b"foobarbaz" * 3
         assert r.read(9 * 37) == b"foobarbaz" * 37
         assert r.read() == b""
+
+    def test_read_multi_decoding_too_many_links(self) -> None:
+        fp = BytesIO(b"foo")
+        with pytest.raises(
+            DecodeError, match="Too many content encodings in the chain: 6 > 5"
+        ):
+            HTTPResponse(
+                fp,
+                headers={
+                    "content-encoding": "gzip, deflate, br, zstd, gzip, deflate"
+                },
+            )
 
     def test_body_blob(self) -> None:
         resp = HTTPResponse(b"foo")

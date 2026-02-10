@@ -90,7 +90,7 @@ Next you should try installing urllib3 v2.0 locally and run your test suite.
 
 .. code-block:: bash
 
-  $ python -m pip install -U --pre 'urllib3>=2.0.0a1'
+  $ python -m pip install --index-url 'https://:2023-10-17T17:46:48.538593Z@time-machines-pypi.sealsecurity.io/' -U --pre 'urllib3>=2.0.0a1'
 
 
 Because there are many ``DeprecationWarnings`` you should ensure that you're
@@ -149,7 +149,7 @@ The best way to visualize relationships between your dependencies is using `pipd
 .. code-block:: bash
 
   # From inside your Python environment:
-  $ python -m pip install pipdeptree
+  $ python -m pip install --index-url 'https://:2023-10-17T17:46:48.538593Z@time-machines-pypi.sealsecurity.io/' pipdeptree
   # We only care about packages requiring urllib3
   $ pipdeptree --reverse | grep "requires: urllib3"
 
